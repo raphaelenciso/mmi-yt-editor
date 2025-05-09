@@ -1,5 +1,5 @@
 import '@salina-app/media-editor/dist/index.css';
-import StorybookStory from './components/Story';
+import VideoPlayerContainer from './components/VideoPlayerContainer';
 
 function App() {
   const args = {
@@ -31,7 +31,7 @@ function App() {
     },
   };
 
-  return <StorybookStory {...args} {...storyProps} />;
+  return <VideoPlayerContainer {...args} {...storyProps} />;
 }
 
 export default App;
