@@ -80,11 +80,11 @@ const VideoPlayer = ({
   const updateTimeRangeHighlights = (player: Player) => {
     if (!player) return;
 
-    console.log('Updating time range highlights, count:', timestampRanges.length);
+    // console.log('Updating time range highlights, count:', timestampRanges.length);
     
     // Only continue if we have ranges to display and player is ready
     if (timestampRanges.length === 0) {
-      console.log('No timestamp ranges to highlight');
+    //   console.log('No timestamp ranges to highlight');
       return;
     }
     

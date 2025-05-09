@@ -1228,10 +1228,10 @@
   resolved "https://registry.yarnpkg.com/@rollup/rollup-win32-x64-msvc/-/rollup-win32-x64-msvc-4.40.2.tgz#8dae04d01a2cbd84d6297d99356674c6b993f0fc"
   integrity sha512-bwspbWB04XJpeElvsp+DCylKfF4trJDa2Y9Go8O6A7YLX2LIKGcNK/CYImJN6ZP4DcuOHB4Utl3iCbnR62DudA==
 
-"@salina-app/media-editor@^0.1.63":
-  version "0.1.63"
-  resolved "https://registry.yarnpkg.com/@salina-app/media-editor/-/media-editor-0.1.63.tgz#a2adf9351d2ad673759914ca48c340adf6d7731c"
-  integrity sha512-+FhqmNY4iNZXmmCJarxUyM9pGKc0vDLFkMZcrugVNlLJ4z67Cv9S1F8wXHsIGPz4llAsriQmWF+l1eX5SLiyHw==
+"@salina-app/media-editor@^0.1.64":
+  version "0.1.64"
+  resolved "https://registry.yarnpkg.com/@salina-app/media-editor/-/media-editor-0.1.64.tgz#30bb70fd22f36eccde5be935f89ef18a6a41ee5f"
+  integrity sha512-i5R8aZltqrRHI9/Jn4x7wp8DNCvQp2zSAxGT8xOYCDu+3Iu0jtxiaAUqJl4uGTBIYoBPxmyPSwr8Maix3Fv5/w==
   dependencies:
     "@iconify/react" "^5.2.0"
     "@radix-ui/react-alert-dialog" "^1.1.4"
