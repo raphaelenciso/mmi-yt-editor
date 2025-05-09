@@ -72,12 +72,9 @@ const VideoPlayerContainer = ({
   const { refreshTrimmedClips, refreshTrimmedDirectory } = useRefresh();
   const { resetTrimmerStamp } = useTrimmerStampStore();
 
-  const [videoUrl, setVideoUrl] = useState('');
-  const [currentVideoUrl, setCurrentVideoUrl] = useState('');
-  const [videoLoaded, setVideoLoaded] = useState(false);
-  const [timestampRanges, setTimestampRanges] = useState<TimestampRange[]>([
-    { start: '', end: '', startSeconds: null, endSeconds: null, label: '' }
-  ]);
+  const [videoUrl, setVideoUrl] = useState(videoMetadata?.videoLink || '');
+  const [currentVideoUrl, setCurrentVideoUrl] = useState(videoMetadata?.videoLink || '');
+  const [timestampRanges, setTimestampRanges] = useState<TimestampRange[]>([{ start: '', end: '', startSeconds: null, endSeconds: null, label: '' }]);
   const [player, setPlayer] = useState<Player | null>(null);
   const [singleSegmentMode, setSingleSegmentMode] = useState(false);
   const [activeSegmentIndex, setActiveSegmentIndex] = useState(-1);
@@ -96,20 +93,49 @@ const VideoPlayerContainer = ({
 
   const handleLoadVideo = useCallback(() => {
     if (videoUrl) {
-      // Make sure all ranges are properly converted to seconds when loading the video
-      const updatedRanges = timestampRanges.map(range => {
+      // Convert existing ranges' times to seconds
+      const updatedRanges = timestampRanges.map((range, index) => {
         const startSec = timeToSeconds(range.start);
         const endSec = timeToSeconds(range.end);
+        
+        // Only include ranges where both start and end are valid
+        if (startSec !== null && endSec !== null && startSec < endSec) {
+          return { 
+            ...range, 
+            startSeconds: startSec, 
+            endSeconds: endSec,
+            label: `Segment ${index + 1}`
+          };
+        }
+        
+        // Keep the range but mark it as invalid (will be filtered out later)
         return { ...range, startSeconds: startSec, endSeconds: endSec };
       });
-      handleTimestampRangesChange(updatedRanges);
+      
+      // Filter out completely empty ranges to avoid clutter
+      const filteredRanges = updatedRanges.filter(range => 
+        range.start.trim() !== '' || range.end.trim() !== ''
+      );
+      
+      // Ensure we always have at least one range for the user to edit
+      if (filteredRanges.length === 0) {
+        filteredRanges.push({ 
+          start: '', 
+          end: '', 
+          startSeconds: null, 
+          endSeconds: null, 
+          label: '' 
+        });
+      }
+      
+      console.log('Updated timestamp ranges on load:', filteredRanges);
+      handleTimestampRangesChange(filteredRanges);
       setCurrentVideoUrl(videoUrl);
-      setVideoLoaded(true);
     }
   }, [videoUrl, timestampRanges, handleTimestampRangesChange]);
 
   const getVideoSource = useCallback(() => {
-    if (!currentVideoUrl || !videoLoaded) return [];
+    if (!currentVideoUrl) return [];
 
     if (isYoutubeUrl(currentVideoUrl)) {
       const youtubeId = getYoutubeId(currentVideoUrl);
@@ -135,7 +161,7 @@ const VideoPlayerContainer = ({
           : 'video/mp4',
       },
     ];
-  }, [currentVideoUrl, videoLoaded]);
+  }, [currentVideoUrl]);
 
   useEffect(() => {
     if (!player) return;
@@ -159,22 +185,37 @@ const VideoPlayerContainer = ({
         const startSeconds = firstRange?.startSeconds;
         if (validRanges.length > 0 && firstRange && startSeconds !== null && startSeconds !== undefined) {
           player?.currentTime(startSeconds);
-          player?.play().catch(err => console.error('Failed to play first segment:', err));
         }
       };
 
       const timeUpdateHandler = () => {
         const currentTime = player?.currentTime() || 0;
         
+        // Handle single segment mode with higher priority
         if (singleSegmentMode && activeSegmentIndex >= 0) {
-          const activeRange = validRanges[activeSegmentIndex];
+          // Find the active range
+          const activeRangeIndex = Math.min(activeSegmentIndex, validRanges.length - 1);
+          const activeRange = validRanges[activeRangeIndex];
+          
+          // If we have a valid range with an end time and we've reached that time
           if (activeRange?.endSeconds && currentTime >= activeRange.endSeconds) {
+            console.log(`Reached end of segment ${activeRangeIndex + 1}, pausing at ${activeRange.endSeconds}`);
+            
+            // Pause the video
             player?.pause();
-            player?.currentTime(activeRange.endSeconds);
+            
+            // Make sure we're at the correct end position
+            setTimeout(() => {
+              if (player && typeof player.currentTime === 'function' && activeRange.endSeconds !== null) {
+                player.currentTime(activeRange.endSeconds - 0.1);
+              }
+            }, 10);
+            
             return;
           }
         }
         
+        // The rest of the handler for non-single segment mode
         let targetSegmentIndex = -1;
         
         for (let i = 0; i < validRanges.length; i++) {
@@ -194,6 +235,7 @@ const VideoPlayerContainer = ({
             const bufferedEndTime = range.endSeconds !== null ? range.endSeconds + 0.5 : null;
             if (bufferedEndTime !== null && currentTime >= bufferedEndTime) {
               if (i === currentSegmentIndex) {
+                // Only handle this for non-single segment mode
                 if (!singleSegmentMode && i < validRanges.length - 1) {
                   const nextRange = validRanges[i + 1];
                   if (nextRange && nextRange.startSeconds !== null) {
@@ -201,12 +243,20 @@ const VideoPlayerContainer = ({
                     currentSegmentIndex = i + 1;
                     return;
                   }
+                } else {
+                  // Pause at the end of segment
+                  player?.pause();
+                  return;
                 }
               }
             }
           }
           
-          if (validRanges.length > 0 && validRanges[0].startSeconds !== null && currentTime < validRanges[0].startSeconds) {
+          // Only initialize to segment 1 if not in single segment mode
+          // and the current time is before the first segment
+          if (!singleSegmentMode && validRanges.length > 0 && 
+              validRanges[0].startSeconds !== null && 
+              currentTime < validRanges[0].startSeconds) {
             initializeSegment();
             return;
           }
@@ -221,6 +271,11 @@ const VideoPlayerContainer = ({
       };
 
       const seekedHandler = () => {
+        // Only run the auto-adjust if we're not in single segment mode or actively selecting a segment
+        if (singleSegmentMode) {
+          return; // Skip this handler completely in single segment mode
+        }
+        
         const currentTime = player.currentTime() || 0;
         
         let inSegment = false;
@@ -260,7 +315,8 @@ const VideoPlayerContainer = ({
         }
       };
 
-      initializeSegment();
+      // Remove automatic initialization to first segment on mount
+      // initializeSegment();
       
       player.on('timeupdate', timeUpdateHandler);
       player.on('seeked', seekedHandler);
@@ -292,129 +348,62 @@ const VideoPlayerContainer = ({
     const updatedRanges = [...timestampRanges];
     updatedRanges[index][field] = value;
     
-    // Calculate seconds immediately to make sure highlights update
+    // Update the corresponding seconds value
     if (field === 'start') {
       updatedRanges[index].startSeconds = timeToSeconds(value);
     } else if (field === 'end') {
       updatedRanges[index].endSeconds = timeToSeconds(value);
     }
     
+    // If this is a valid range, ensure we update the label
+    if (updatedRanges[index].startSeconds !== null && updatedRanges[index].endSeconds !== null) {
+      updatedRanges[index].label = `Segment ${index + 1}`;
+    }
+    
+    console.log(`Updated range ${index}, field ${field} to:`, updatedRanges[index]);
     handleTimestampRangesChange(updatedRanges);
   };
 
   const jumpToTimestamp = (index: number) => {
     if (!player) return;
     
+    console.log(`Jumping to timestamp index ${index}`);
+    
     const range = timestampRanges[index];
     if (range.startSeconds !== null) {
+      console.log(`Setting segment ${index + 1} with start time ${range.startSeconds}`);
+      
+      // First switch to single segment mode and set active segment
       handleSingleSegmentModeChange(true);
       handleActiveSegmentChange(index);
       
-      player?.currentTime(range.startSeconds);
-      player?.play().catch(err => console.error('Failed to play after clicking timestamp:', err));
+      try {
+        // Set time to segment start
+        player.currentTime(range.startSeconds);
+        
+        // Force a re-render of the player's internal state
+        setTimeout(() => {
+          // Make sure we're still at the correct segment
+          if (player && typeof player.currentTime === 'function') {
+            const currentTime = player.currentTime() || 0;
+            if (Math.abs(currentTime - (range.startSeconds || 0)) > 0.5) {
+              console.log(`Correcting position: ${currentTime} to ${range.startSeconds}`);
+              player.currentTime(range.startSeconds || 0);
+            }
+          }
+        }, 100);
+      } catch (err) {
+        console.error('Error during jumpToTimestamp:', err);
+      }
     }
   };
 
   const handlePlayerReady = useCallback((videoPlayer: Player) => {
     setPlayer(videoPlayer);
-    
-    // Process all timestamp segments to ensure they're all highlighted
-    const updatedRanges = timestampRanges.map(range => {
-      const startSec = timeToSeconds(range.start);
-      const endSec = timeToSeconds(range.end);
-      return { ...range, startSeconds: startSec, endSeconds: endSec };
-    });
-    
-    // Update ranges with calculated seconds values
-    if (JSON.stringify(updatedRanges) !== JSON.stringify(timestampRanges)) {
-      handleTimestampRangesChange(updatedRanges);
-    }
-    
-    // Setup listeners to refresh highlights when metadata is loaded
-    videoPlayer.on('loadedmetadata', () => {
-      setTimeout(() => {
-        // Re-apply timestamp ranges after a short delay to ensure UI updates
-        handleTimestampRangesChange([...updatedRanges]);
-      }, 500);
-    });
-  }, [timestampRanges, handleTimestampRangesChange]);
+  }, []);
 
   const onCut = async (starting_s: string, ending_s: string) => {
-    // Create a new timestamp segment from the cut
-    const newSegment = {
-      start: starting_s,
-      end: ending_s,
-      startSeconds: parseInt(starting_s, 10),
-      endSeconds: parseInt(ending_s, 10),
-      label: `Segment ${timestampRanges.length + 1}`
-    };
-    
-    // Add the new segment to the timestamp ranges
-    const updatedRanges = [...timestampRanges];
-    // Only add non-empty segments
-    if (starting_s && ending_s) {
-      // If this is the first segment and it's empty, replace it
-      if (updatedRanges.length === 1 && 
-          !updatedRanges[0].start && 
-          !updatedRanges[0].end) {
-        updatedRanges[0] = newSegment;
-      } else {
-        // Otherwise add as a new segment
-        updatedRanges.push(newSegment);
-      }
-      handleTimestampRangesChange(updatedRanges);
-    }
-
-    // Original cut functionality
-    const timeAired = videoMetadata?.videoTitle?.split('.') || [];
-
-    const videoTitleAuto = videoMetadata?.videoTitle
-      ? `clip_${Date.now()}_${timeAired[0]}${starting_s}-${ending_s}`
-      : 'default';
-
-    if (preCutClip && mainFilePath && userToken) {
-      const payload = {
-        title: videoTitleAuto,
-        type: videoMetadata?.videoTitle?.includes('mp3') ? 'audio' : 'video',
-        channel_name: mainFilePath.split('/')[2],
-        sources: [
-          {
-            source: mainFilePath,
-            timestamp_start: starting_s,
-            timestamp_end: ending_s,
-          },
-        ],
-        access_token: userToken,
-      };
-
-      preCutClip(payload).then(async () => {
-        try {
-          if (refreshTrimmedClips && resetTrimmerStamp) {
-            refreshTrimmedClips(
-              {
-                source: mainFilePath,
-                access_token: userToken,
-              },
-              resetTrimmerStamp
-            );
-          }
-          if (refreshTrimmedDirectory) {
-            refreshTrimmedDirectory({
-              path_directory: `${mainFilePath.substring(
-                0,
-                mainFilePath.lastIndexOf('/')
-              )}`,
-              access_token: userToken,
-            });
-          }
-        } catch (error: any) {
-          console.log(error);
-          if (resetTrimmerStamp) {
-            resetTrimmerStamp();
-          }
-        }
-      });
-    }
+    console.log('onCut', starting_s, ending_s);
   };
 
   useKeyboardShortcuts({
@@ -422,16 +411,60 @@ const VideoPlayerContainer = ({
   });
 
   useTimelineDataInitializer({
-    videoSrc: videoLoaded ? currentVideoUrl : '',
+    videoSrc: currentVideoUrl || videoMetadata.videoLink,
   });
 
+  // Add a useEffect to debug the timestampRanges
+  useEffect(() => {
+    // Log the current timestamp ranges whenever they change
+    console.log('Current timestampRanges:', timestampRanges);
+    
+    // Check for valid ranges that should be highlighted
+    const validRanges = timestampRanges.filter(range => 
+      range.startSeconds !== null && 
+      range.endSeconds !== null
+    );
+    console.log('Valid ranges for highlighting:', validRanges);
+  }, [timestampRanges]);
+
+  // Add a useEffect to disable autoplay for SalinaPlayer that's placed after other effects
+  useEffect(() => {
+    // Function to find and disable autoplay on any video elements
+    const disableAutoplay = () => {
+      try {
+        // Give time for SalinaPlayer to initialize
+        setTimeout(() => {
+          // Find any video elements in the document that might be from SalinaPlayer
+          const videoElements = document.querySelectorAll('video');
+          console.log('Found video elements:', videoElements.length);
+          
+          videoElements.forEach(video => {
+            // Set autoplay to false
+            video.autoplay = false;
+            
+            // Force pause if it's already playing
+            if (!video.paused) {
+              video.pause();
+            }
+            
+            console.log('Disabled autoplay on video element');
+          });
+        }, 500);
+      } catch (error) {
+        console.error('Error disabling autoplay:', error);
+      }
+    };
+    
+    // Run the function when component mounts
+    disableAutoplay();
+    
+  }, []); // Empty dependency array to run only once on mount
+
   return (
-    <div className="max-h-screen w-full overflow-y-auto flex flex-col">
-      <div className="hidden">
-        <SalinaPlayer className="h-[50vh] mx-auto" />
-      </div>
-      <div className="container mx-auto p-4">
-        {videoLoaded ? (
+    <div className="h-screen w-screen flex flex-col">
+      <div className="flex-grow flex flex-row gap-4 p-4">
+        <div className="flex-1 flex flex-col">
+          <h2 className="text-lg font-semibold mb-2">Video Player</h2>
           <VideoPlayer
             options={{
               autoplay: false,
@@ -441,71 +474,72 @@ const VideoPlayerContainer = ({
               sources: getVideoSource(),
             }}
             onReady={handlePlayerReady}
-            timestampRanges={timestampRanges}
+            timestampRanges={timestampRanges.filter(range => 
+              range.startSeconds !== null && 
+              range.endSeconds !== null
+            )}
           />
-        ) : (
-          <div className="w-full aspect-video bg-slate-800 flex items-center justify-center text-white">
-            Enter a video URL and click "Load Video" to start
-          </div>
-        )}
-        
-        <div className="mt-4">
-          <div className="flex space-x-2 mb-4">
-            <input
-              type="text"
-              placeholder="Enter video URL (direct link or YouTube)"
-              value={videoUrl}
-              onChange={(e) => setVideoUrl(e.target.value)}
-              onKeyDown={handleKeyDown}
-              className="flex-1 p-2 border rounded-md"
-            />
-            <button onClick={handleLoadVideo} className="p-2 bg-blue-500 text-white rounded-md">Load Video</button>
-          </div>
-          
-          <div className="flex items-center justify-between mb-4 pb-2 border-b">
-            <span className="text-sm font-medium">Playback Mode:</span>
-            <button 
-              onClick={() => handleSingleSegmentModeChange(!singleSegmentMode)}
-              className="ml-2 p-1 bg-gray-200 rounded-md text-sm"
-            >
-              {singleSegmentMode ? "Single Segment Mode" : "Auto-play All Segments"}
-            </button>
-          </div>
-          
-          <div className="space-y-3 mb-4">
-            <h3 className="font-medium text-sm mb-2">Define Timestamp Segments:</h3>
-            {timestampRanges.map((range, index) => (
-              <div key={index} className="flex space-x-2 items-center p-2 border rounded-md">
-                <button
-                  className="flex-none font-medium px-2 py-1 h-auto min-w-[40px] hover:bg-gray-200 rounded-md"
-                  onClick={() => jumpToTimestamp(index)}
-                  disabled={!range.start || !range.startSeconds}
-                >
-                  Segment {index + 1}
-                </button>
-                <input
-                  type="text"
-                  placeholder="Start time (HH:MM:SS, MM:SS, or SS)"
-                  value={range.start}
-                  onChange={(e) => updateTimestampRange(index, 'start', e.target.value)}
-                  className="flex-1 p-2 border rounded-md"
-                />
-                <input
-                  type="text"
-                  placeholder="End time (HH:MM:SS, MM:SS, or SS)"
-                  value={range.end}
-                  onChange={(e) => updateTimestampRange(index, 'end', e.target.value)}
-                  className="flex-1 p-2 border rounded-md"
-                />
-              </div>
-            ))}
-            <button onClick={addTimestampRange} className="w-full p-2 bg-blue-500 text-white rounded-md">Add Timestamp Range</button>
-          </div>
+        </div>
+        <div className="flex-1 flex flex-col">
+          <h2 className="text-lg font-semibold mb-2">Salina Player</h2>
+          <SalinaPlayer className="h-[50vh] w-full" key="no-autoplay" />
         </div>
       </div>
-
-      <div className="mt-auto">
-        {videoLoaded && <Timeline userToken={userToken} defaultZoomSize={85} />}
+      
+      <div className="w-full p-2 bg-gray-100">
+        <div className="flex space-x-2 mb-2">
+          <input
+            type="text"
+            placeholder="Enter video URL (direct link or YouTube)"
+            value={videoUrl}
+            onChange={(e) => setVideoUrl(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="flex-1 p-2 border rounded-md"
+          />
+          <button onClick={handleLoadVideo} className="p-2 bg-blue-500 text-white rounded-md">Load Video</button>
+        </div>
+        <div className="flex items-center justify-between mb-2 pb-2 border-b">
+          <span className="text-sm font-medium">Playback Mode:</span>
+          <button 
+            onClick={() => handleSingleSegmentModeChange(!singleSegmentMode)}
+            className="ml-2 p-1 bg-gray-200 rounded-md text-sm"
+          >
+            {singleSegmentMode ? "Single Segment Mode" : "Auto-play All Segments"}
+          </button>
+        </div>
+        <div className="space-y-3">
+          <h3 className="font-medium text-sm mb-2">Define Timestamp Segments:</h3>
+          {timestampRanges.map((range, index) => (
+            <div key={index} className="flex space-x-2 items-center p-2 border rounded-md">
+              <button
+                className="flex-none font-medium px-2 py-1 h-auto min-w-[40px] hover:bg-gray-200 rounded-md"
+                onClick={() => jumpToTimestamp(index)}
+                disabled={!range.start || !range.startSeconds}
+              >
+                Segment {index + 1}
+              </button>
+              <input
+                type="text"
+                placeholder="Start time (HH:MM:SS, MM:SS, or SS)"
+                value={range.start}
+                onChange={(e) => updateTimestampRange(index, 'start', e.target.value)}
+                className="flex-1 p-2 border rounded-md"
+              />
+              <input
+                type="text"
+                placeholder="End time (HH:MM:SS, MM:SS, or SS)"
+                value={range.end}
+                onChange={(e) => updateTimestampRange(index, 'end', e.target.value)}
+                className="flex-1 p-2 border rounded-md"
+              />
+            </div>
+          ))}
+          <button onClick={addTimestampRange} className="w-full p-2 bg-blue-500 text-white rounded-md">Add Timestamp Range</button>
+        </div>
+      </div>
+      
+      <div className="w-full fixed bottom-0 left-0 right-0">
+        <Timeline userToken={userToken} defaultZoomSize={85} />
       </div>
 
       {/* define global dialog for confirmation modal */}

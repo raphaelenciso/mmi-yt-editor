@@ -80,9 +80,32 @@ const VideoPlayer = ({
   const updateTimeRangeHighlights = (player: Player) => {
     if (!player) return;
 
+    console.log('Updating time range highlights, count:', timestampRanges.length);
+    
+    // Only continue if we have ranges to display and player is ready
+    if (timestampRanges.length === 0) {
+      console.log('No timestamp ranges to highlight');
+      return;
+    }
+    
+    const duration = player.duration();
+    if (!duration || duration <= 0) {
+      console.log('Cannot update highlights: Invalid duration:', duration);
+      return;
+    }
+
     // Get the progress control element
     const progressControl = player.el().querySelector('.vjs-progress-control');
-    if (!progressControl) return;
+    if (!progressControl) {
+      console.log('Progress control not found');
+      return;
+    }
+    
+    const progressHolder = progressControl.querySelector('.vjs-progress-holder');
+    if (!progressHolder) {
+      console.log('Progress holder not found');
+      return;
+    }
 
     // Clear existing highlights
     highlightRefs.current.forEach(ref => {
@@ -95,21 +118,41 @@ const VideoPlayer = ({
     // Create new highlights for each timestamp range
     timestampRanges.forEach((range, index) => {
       if (range.startSeconds !== null && range.endSeconds !== null) {
-      const highlight = document.createElement('div');
-      highlight.className = 'vjs-time-range-highlight';
-        progressControl.querySelector('.vjs-progress-holder')?.appendChild(highlight);
-        highlightRefs.current[index] = highlight;
-
-    const duration = player.duration();
-    if (!duration || duration <= 0) return;
-
-        const startPercent = (range.startSeconds / duration) * 100;
-        const endPercent = (range.endSeconds / duration) * 100;
-    const widthPercent = endPercent - startPercent;
-
-        highlight.style.left = `${startPercent}%`;
-        highlight.style.width = `${widthPercent}%`;
-    }
+        try {
+          console.log(`Processing range ${index}:`, range);
+          
+          // Validate range values
+          if (range.startSeconds < 0 || range.endSeconds <= range.startSeconds || range.endSeconds > duration) {
+            console.log(`Invalid range values for index ${index}:`, range);
+            return; // Skip this range
+          }
+          
+          // Create highlight element
+          const highlight = document.createElement('div');
+          highlight.className = 'vjs-time-range-highlight';
+          
+          // Keep all highlights yellow
+          highlight.style.backgroundColor = 'rgba(255, 204, 0, 0.5)';
+          highlight.style.borderLeft = '2px solid rgba(255, 204, 0, 0.8)';
+          highlight.style.borderRight = '2px solid rgba(255, 204, 0, 0.8)';
+          
+          // Calculate position
+          const startPercent = (range.startSeconds / duration) * 100;
+          const endPercent = (range.endSeconds / duration) * 100;
+          const widthPercent = endPercent - startPercent;
+          
+          highlight.style.left = `${startPercent}%`;
+          highlight.style.width = `${widthPercent}%`;
+          
+          // Add to DOM
+          progressHolder.appendChild(highlight);
+          highlightRefs.current[index] = highlight;
+          
+          console.log(`Added highlight ${index}: left=${startPercent}%, width=${widthPercent}%`);
+        } catch (error) {
+          console.error(`Error creating highlight for range ${index}:`, error);
+        }
+      }
     });
   };
 
@@ -164,8 +207,12 @@ const VideoPlayer = ({
         updateTimeRangeHighlights(player);
       });
 
-      // Update highlights on time updates
+      // Update highlights on time updates and when duration changes
       player.on('timeupdate', () => {
+        updateTimeRangeHighlights(player);
+      });
+      
+      player.on('durationchange', () => {
         updateTimeRangeHighlights(player);
       });
 
@@ -175,7 +222,7 @@ const VideoPlayer = ({
       player.src(options.sources);
 
       // Update time range highlights when sources change
-      player.on('loadedmetadata', () => {
+      player.one('loadedmetadata', () => {
         updateTimeRangeHighlights(player);
       });
     }
