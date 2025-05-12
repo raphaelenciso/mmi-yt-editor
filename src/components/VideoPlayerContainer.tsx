@@ -565,7 +565,7 @@ const VideoPlayerContainer = ({
   }, []); // Empty dependency array to run only once on mount
 
   return (
-    <div className="h-screen w-screen flex flex-col">
+    <div className="h-screen w-screen flex flex-col bg-gray-50">
       {/* Hidden SalinaPlayer - maintains cutting functionality */}
       <div className="hidden overflow-hidden h-0 w-0 opacity-0 absolute pointer-events-none">
         <SalinaPlayer 
@@ -575,31 +575,34 @@ const VideoPlayerContainer = ({
       </div>
 
       {/* Main content area with scrolling */}
-      <div className="flex-1 overflow-y-auto pb-32"> {/* Added padding bottom for Timeline space */}
+      <div className="flex-1 overflow-y-auto pb-32 px-4 md:px-8 max-w-6xl mx-auto w-full"> 
         {/* Video player section */}
-        <div className="p-4">
+        <div className="py-6">
           <div className="flex flex-col">
-            <h2 className="text-lg font-semibold mb-2">Video Player</h2>
-            <VideoPlayer
-              options={{
-                autoplay: false,
-                controls: true,
-                responsive: true,
-                fluid: true,
-                sources: getVideoSource(),
-              }}
-              onReady={handlePlayerReady}
-              timestampRanges={timestampRanges.filter(range => 
-                range.startSeconds !== null && 
-                range.endSeconds !== null
-              )}
-            />
+            <h2 className="text-xl font-bold mb-4 text-gray-800">Video Player</h2>
+            <div className="rounded-lg overflow-hidden shadow-lg w-full max-w-4xl mx-auto">
+              <VideoPlayer
+                options={{
+                  autoplay: false,
+                  controls: true,
+                  responsive: true,
+                  fluid: true,
+                  sources: getVideoSource(),
+                }}
+                onReady={handlePlayerReady}
+                timestampRanges={timestampRanges.filter(range => 
+                  range.startSeconds !== null && 
+                  range.endSeconds !== null
+                )}
+              />
+            </div>
           </div>
         </div>
 
         {/* Controls section */}
-        <div className="w-full p-4 bg-gray-100">
-          <div className="mb-4">
+        <div className="w-full mb-8 bg-white rounded-lg shadow-md p-6">
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Video URL</label>
             <div className="flex space-x-2">
               <input
                 type="text"
@@ -607,61 +610,103 @@ const VideoPlayerContainer = ({
                 value={videoUrl}
                 onChange={(e) => setVideoUrl(e.target.value)}
                 onKeyDown={handleKeyDown}
-                className="flex-1 p-2 border rounded-md"
+                className="flex-1 p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
               />
-              <button onClick={handleLoadVideo} className="p-2 bg-blue-500 text-white rounded-md">Load Video</button>
+              <button 
+                onClick={handleLoadVideo} 
+                className="px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md transition-colors shadow-sm"
+              >
+                Load Video
+              </button>
             </div>
-            <div className="mt-1 text-sm text-gray-500">
+            <div className="mt-2 text-sm text-gray-500">
               Current source: {useTimelineDataStore.getState().videoSrc || 'None'}
             </div>
           </div>
 
-          <div className="flex items-center justify-between mb-2 pb-2 border-b">
-            <span className="text-sm font-medium">Playback Mode:</span>
+          <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-200">
+            <h3 className="font-medium text-gray-700">Playback Mode</h3>
             <button 
               onClick={() => handleSingleSegmentModeChange(!singleSegmentMode)}
-              className="ml-2 p-1 bg-gray-200 rounded-md text-sm"
+              className={`ml-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                singleSegmentMode 
+                  ? "bg-blue-100 text-blue-800 hover:bg-blue-200" 
+                  : "bg-gray-100 text-gray-800 hover:bg-gray-200"
+              }`}
             >
               {singleSegmentMode ? "Single Segment Mode" : "Auto-play All Segments"}
             </button>
           </div>
 
-          <div className="space-y-3">
-            <h3 className="font-medium text-sm mb-2">Define Timestamp Segments:</h3>
-            {timestampRanges.map((range, index) => (
-              <div key={index} className="flex space-x-2 items-center p-2 border rounded-md">
-                <button
-                  className="flex-none font-medium px-2 py-1 h-auto min-w-[40px] hover:bg-gray-200 rounded-md"
-                  onClick={() => jumpToTimestamp(index)}
-                  disabled={!range.start || !range.startSeconds}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-medium text-gray-700">Define Timestamp Segments</h3>
+              <button 
+                onClick={addTimestampRange} 
+                className="flex items-center text-sm px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add Segment
+              </button>
+            </div>
+            
+            <div className="space-y-3 mt-2">
+              {timestampRanges.map((range, index) => (
+                <div 
+                  key={index} 
+                  className={`flex space-x-2 items-center p-3 border rounded-md transition-all ${
+                    activeSegmentIndex === index && singleSegmentMode
+                      ? "border-blue-500 bg-blue-50"
+                      : "border-gray-200 hover:border-gray-300"
+                  }`}
                 >
-                  Segment {index + 1}
-                </button>
-                <input
-                  type="text"
-                  placeholder="Start time (HH:MM:SS, MM:SS, or SS)"
-                  value={range.start}
-                  onChange={(e) => updateTimestampRange(index, 'start', e.target.value)}
-                  className="flex-1 p-2 border rounded-md"
-                />
-                <input
-                  type="text"
-                  placeholder="End time (HH:MM:SS, MM:SS, or SS)"
-                  value={range.end}
-                  onChange={(e) => updateTimestampRange(index, 'end', e.target.value)}
-                  className="flex-1 p-2 border rounded-md"
-                />
-              </div>
-            ))}
-            <button onClick={addTimestampRange} className="w-full p-2 bg-blue-500 text-white rounded-md">
-              Add Timestamp Range
-            </button>
+                  <button
+                    className={`flex-none font-medium px-3 py-2 rounded-md transition-colors ${
+                      activeSegmentIndex === index && singleSegmentMode
+                        ? "bg-blue-500 text-white hover:bg-blue-600"
+                        : "bg-gray-100 hover:bg-gray-200 text-gray-800"
+                    }`}
+                    onClick={() => jumpToTimestamp(index)}
+                    disabled={!range.start || !range.startSeconds}
+                  >
+                    {range.start && range.end
+                      ? `Segment ${index + 1}`
+                      : `Segment ${index + 1}`
+                    }
+                  </button>
+                  <div className="flex-1 grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Start Time</label>
+                      <input
+                        type="text"
+                        placeholder="HH:MM:SS"
+                        value={range.start}
+                        onChange={(e) => updateTimestampRange(index, 'start', e.target.value)}
+                        className="w-full p-2 border border-gray-300 rounded-md"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">End Time</label>
+                      <input
+                        type="text"
+                        placeholder="HH:MM:SS"
+                        value={range.end}
+                        onChange={(e) => updateTimestampRange(index, 'end', e.target.value)}
+                        className="w-full p-2 border border-gray-300 rounded-md"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
 
       {/* Timeline section - Fixed at bottom */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-md z-50">
         <Timeline userToken={userToken} defaultZoomSize={85} />
       </div>
 
